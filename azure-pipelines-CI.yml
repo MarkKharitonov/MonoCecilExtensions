@@ -1,0 +1,39 @@
+# NuGet-DontNet-Lib application
+
+trigger:
+- master
+- hotfix/*
+
+name: 1.0.$(Date:yy)$(DayOfYear)$(Rev:.r)
+
+resources:
+  repositories:
+  - repository: templates
+    type: git
+    name: DFDevOps\cicd-templates
+    ref: refs/tags/stable-2
+    # http://tdc1tfsapp01:8080/tfs/DefaultCollection/DFDevOps/_git/cicd-templates    
+
+jobs:
+- job: Build
+  pool:
+    demands: DotNetFramework
+  workspace:
+    clean: all
+  variables:
+  - template: ci/variables.yml@templates
+ 
+  steps:
+  - template: ci/set-branch-build-number.yml@templates
+
+  - template: ci/build-and-test.yml@templates
+
+  - template: ci/symbols-publish.yml@templates
+
+  - template: ci/nuget-pack.yml@templates
+
+  - template: ci/nuget-push.yml@templates
+
+  - template: ci/nuget-promote.yml@templates
+
+  - template: ci/sonar-qube-publish.yml@templates

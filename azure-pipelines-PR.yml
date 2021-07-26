@@ -1,0 +1,27 @@
+# NuGet-DontNet-Lib application
+
+trigger: none
+
+name: 0.0.$(Date:yy)$(DayOfYear)$(Rev:.r)
+
+resources:
+  repositories:
+  - repository: templates
+    type: git
+    name: DFDevOps\cicd-templates
+    ref: refs/tags/stable-2
+    # http://tdc1tfsapp01:8080/tfs/DefaultCollection/DFDevOps/_git/cicd-templates    
+
+jobs:
+- job: Build
+  pool:
+    demands: DotNetFramework
+  workspace:
+    clean: all
+  variables:
+  - template: ci/variables.yml@templates
+
+  steps:
+  - template: ci/build-and-test.yml@templates
+
+  - template: ci/nuget-pack.yml@templates

@@ -1,0 +1,9 @@
+﻿<Project>
+  <PropertyGroup>
+    <Product>MonoCecilExtensions</Product>
+    <AssemblyTitle>MonoCecilExtensions</AssemblyTitle>
+    <Description>Miscellaneous Mono.Cecil extensions.</Description>
+    <Team>Monolith Decomposition</Team>
+  </PropertyGroup>
+  <Import Project="$(MSBuildThisFileDirectory)\Directory.Build.Template.props" Condition="'$(TF_BUILD)' != ''"/>
+</Project>
