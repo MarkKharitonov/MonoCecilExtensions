@@ -36,6 +36,24 @@ namespace MonoCecilExtensions.Tests
             public int Func1(object x) => throw new NotImplementedException();
 
             public int Func2(object x, object y) => throw new NotImplementedException();
+
+            public void Action0_AsMemberOfThisClass()
+            {
+                Action0();
+            }
+
+            public static void Action0_AsStaticMemberOfThisClass(Derived o)
+            {
+                o.Action0();
+            }
+        }
+
+        public class Derived2 : Derived
+        {
+            public void Action0_AsMemberOfBaseClass()
+            {
+                Action0();
+            }
         }
 
         private static IDerived GetObject() => new Derived();
@@ -53,6 +71,50 @@ namespace MonoCecilExtensions.Tests
             var o = GetObject();
             o.Func0();
         }
+
+        public void Func0_Direct2()
+        {
+            var x = DateTime.Now.Ticks;
+            Assert.AreNotEqual(0, x);
+            var o = GetObject();
+            Assert.IsNotNull(o);
+            o.Func0();
+        }
+
+        public void Func0_Direct3()
+        {
+            var x = DateTime.Now.Ticks;
+            Assert.AreNotEqual(0, x);
+            var y = DateTime.Now.Ticks;
+            Assert.AreNotEqual(0, y);
+            var o = GetObject();
+            Assert.IsNotNull(o);
+            o.Func0();
+        }
+
+        public void Func0_Direct4()
+        {
+            var x = DateTime.Now.Ticks;
+            Assert.AreNotEqual(0, x);
+            var y = DateTime.Now.Ticks;
+            Assert.AreNotEqual(0, y);
+            var z = DateTime.Now.Ticks;
+            Assert.AreNotEqual(0, z);
+            var o = GetObject();
+            Assert.IsNotNull(o);
+            o.Func0();
+        }
+
+        public void Func0_DirectAsArg(IDerived x) => x.Func0();
+        public void Func0_DirectAsArg2(int a, IDerived x) => x.Func0();
+        public void Func0_DirectAsArg3(int a, int b, IDerived x) => x.Func0();
+        public void Func0_DirectAsArg4(int a, int b, int c, IDerived x) => x.Func0();
+        public void Func0_DirectAsArg5FromParams(int a, int b, int c, int d, params IDerived[] x) => x[0].Func0();
+        public static void Func0_StaticDirectAsArg(IDerived x) => x.Func0();
+        public static void Func0_StaticDirectAsArg2(int a, IDerived x) => x.Func0();
+        public static void Func0_StaticDirectAsArg3(int a, int b, IDerived x) => x.Func0();
+        public static void Func0_StaticDirectAsArg4(int a, int b, int c, IDerived x) => x.Func0();
+        public static void Func0_StaticDirectAsArg5FromParams(int a, int b, int c, int d, params IDerived[] x) => x[0].Func0();
 
         public static void Func0_DirectAsCast()
         {
@@ -230,10 +292,31 @@ namespace MonoCecilExtensions.Tests
 
             public void Func0_DirectAsProperty() => Value.Func0();
 
+            public void Func0_DirectAsArgIntf(TIntf x) => x.Func0();
+            public void Func0_DirectAsArgImpl(TImpl x) => x.Func0();
+
+            public void Func0_DirectAsArg2(int a, TIntf x) => x.Func0();
+            public void Func0_DirectAsArg3(int a, int b, TIntf x) => x.Func0();
+            public void Func0_DirectAsArg4(int a, int c, int d, TIntf x) => x.Func0();
+            public void Func0_DirectAsArg5(int a, int c, int d, int e, TIntf x) => x.Func0();
+
+            public static void Func0_StaticDirectAsArg(TIntf x) => x.Func0();
+            public static void Func0_StaticDirectAsArg2(int a, TIntf x) => x.Func0();
+            public static void Func0_StaticDirectAsArg3(int a, int b, TIntf x) => x.Func0();
+            public static void Func0_StaticDirectAsArg4(int a, int c, int d, TIntf x) => x.Func0();
+            public static void Func0_StaticDirectAsArg5(int a, int c, int d, int e, TIntf x) => x.Func0();
+
             public void Func0_Indirect() => GetValue().Func0();
 
             public TIntf this[int _] => m_o;
             public static explicit operator TIntf(GenericClass<TIntf, TImpl> o) => o.m_o;
+        }
+
+        private class GenericDerived<TIntf, TImpl> : Derived
+            where TIntf : IBase
+            where TImpl : class, TIntf, new()
+        {
+            public void Func0_DirectAsMemberOfBaseClass() => Func0();
         }
 
         public void Func0_DirectAsGenericClassField()
@@ -259,6 +342,21 @@ namespace MonoCecilExtensions.Tests
         public void Func0_IndirectAsGenericClassExplicitCast()
         {
             ((IDerived)new GenericClass<IDerived, Derived>(new StringBuilder("hello" + " world"))).Func0();
+        }
+
+        public void Func0_IndirectAsInheritedMethod()
+        {
+            new Derived2().Func0();
+        }
+
+        public void Func0_IndirectAsExplicitCastToInterface()
+        {
+            ((IDerived)new Derived()).Func0();
+        }
+
+        public void Func0_IndirectAsGenericDerivedExplicitCast()
+        {
+            ((IDerived)new GenericDerived<IDerived, Derived>()).Func0();
         }
 
         public void Func2_DirectAsGenericClassFieldMixedArgs()
@@ -391,25 +489,40 @@ namespace MonoCecilExtensions.Tests
             ((IDerived)new GenericClass<IDerived, Derived>(DateTime.Now)).Func2(new StringBuilder("hello" + " world"), Enumerable.Range(0, 10).ToArray()[8]);
         }
 
-        private (AssemblyDefinition, MethodDefinition, Instruction) GetContext(string methodName, string typeName = null)
+        private (AssemblyDefinition, MethodDefinition, Instruction) GetContext(string methodName, Type type = null, bool assertDeclaredType = true)
         {
             var asmDef = AssemblyDefinition.ReadAssembly(Assembly.GetExecutingAssembly().Location);
             var targetName = methodName.Substring(0, methodName.IndexOf('_'));
-            MethodDefinition methodDef = null;
-            var typeDef = asmDef.MainModule.GetType(typeName ?? GetType().FullName);
-            methodDef = typeDef.Methods.SingleOrDefault(m => m.Name == methodName);
-            Assert.IsNotNull(methodDef, "Not found or ambiguous match for " + methodName);
-            var instruction = methodDef.Body.Instructions.FirstOrDefault(i => i.Operand is MethodReference mr && mr.Name == targetName);
+            var typeDef = asmDef.MainModule.ImportReference(type ?? GetType()).Resolve();
+            var methodDefs = typeDef.Methods.Where(m => m.Name == methodName).ToList();
+            Assert.AreEqual(1, methodDefs.Count, $"Found {methodDefs.Count} methods named {methodName}");
+            var instruction = methodDefs[0].Body.Instructions.FirstOrDefault(i => i.Operand is MethodReference mr && mr.Name == targetName);
             Assert.IsNotNull(instruction, $"Not found call to {targetName} in {methodName}");
-            var methodRef = (MethodReference)instruction.Operand;
-            Assert.AreEqual(nameof(IBase), methodRef.DeclaringType.Name);
-            return (asmDef, methodDef, instruction);
+            if (assertDeclaredType)
+            {
+                var methodRef = (MethodReference)instruction.Operand;
+                Assert.AreEqual(nameof(IBase), methodRef.DeclaringType.Name);
+            }
+            return (asmDef, methodDefs[0], instruction);
         }
 
         [TestCase(nameof(Func0_Direct))]
+        [TestCase(nameof(Func0_Direct2))]
+        [TestCase(nameof(Func0_Direct3))]
+        [TestCase(nameof(Func0_Direct4))]
         [TestCase(nameof(Func0_DirectAsCast))]
         [TestCase(nameof(Func0_DirectAsCast2))]
         [TestCase(nameof(Func0_DirectAsArrayElement))]
+        [TestCase(nameof(Func0_DirectAsArg))]
+        [TestCase(nameof(Func0_DirectAsArg2))]
+        [TestCase(nameof(Func0_DirectAsArg3))]
+        [TestCase(nameof(Func0_DirectAsArg4))]
+        [TestCase(nameof(Func0_DirectAsArg5FromParams))]
+        [TestCase(nameof(Func0_StaticDirectAsArg))]
+        [TestCase(nameof(Func0_StaticDirectAsArg2))]
+        [TestCase(nameof(Func0_StaticDirectAsArg3))]
+        [TestCase(nameof(Func0_StaticDirectAsArg4))]
+        [TestCase(nameof(Func0_StaticDirectAsArg5FromParams))]
         [TestCase(nameof(Func0_Indirect))]
         [TestCase(nameof(Func0_Indirect2))]
         [TestCase(nameof(Func0_IndirectWithArg))]
@@ -463,29 +576,66 @@ namespace MonoCecilExtensions.Tests
         [TestCase(nameof(Func2_MixedAndComplex))]
         public void Test(string methodName)
         {
-            var (asmDef, methodDef, instruction) = GetContext(methodName);
+            DoTest(methodName, typeof(IDerived));
+        }
+
+        [TestCase(nameof(Derived.Action0_AsMemberOfThisClass), typeof(Derived))]
+        [TestCase(nameof(Derived.Action0_AsStaticMemberOfThisClass), typeof(Derived))]
+        [TestCase(nameof(Derived2.Action0_AsMemberOfBaseClass), typeof(Derived2))]
+        [TestCase(nameof(GenericDerived<IDerived, Derived>.Func0_DirectAsMemberOfBaseClass), typeof(GenericDerived<IDerived, Derived>))]
+        [TestCase(nameof(Func0_IndirectAsExplicitCastToInterface), null)]
+        public void DerivedParent(string methodName, Type type)
+        {
+            DoTest(methodName, typeof(Derived), type, false);
+        }
+
+        [TestCase(nameof(Func0_IndirectAsGenericDerivedExplicitCast), typeof(GenericDerived<IDerived, Derived>))]
+        [TestCase(nameof(Func0_IndirectAsInheritedMethod), typeof(Derived2))]
+        public void DerivedParent2(string methodName, Type type)
+        {
+            DoTest(methodName, type, null, false);
+        }
+
+        private void DoTest(string methodName, Type expectedResult, Type type = null, bool assertDeclaredType = true)
+        {
+            var (asmDef, methodDef, instruction) = GetContext(methodName, type, assertDeclaredType);
             using (asmDef)
             {
-                var typeRef = instruction.GetDeclaredTypeOfThisObject(methodDef.Body.Variables, new Mock<IGenericContext>().Object);
+                var typeRef = instruction.GetDeclaredTypeOfThisObject(methodDef, new Mock<IGenericContext>().Object);
                 Assert.IsNotNull(typeRef);
-                Assert.AreEqual(nameof(IDerived), typeRef.Name);
+                Assert.AreEqual(expectedResult.Name, typeRef.Name);
             }
         }
 
         [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_Direct))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsArgIntf))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsArgImpl))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsArg2))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsArg3))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsArg4))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsArg5))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_StaticDirectAsArg))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_StaticDirectAsArg2))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_StaticDirectAsArg3))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_StaticDirectAsArg4))]
+        [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_StaticDirectAsArg5))]
         [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsField))]
         [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_DirectAsProperty))]
         [TestCase(nameof(GenericClass<IDerived, Derived>.Func0_Indirect))]
-        public void NestedInGeneric(string methodName) => DoTestGeneric(methodName);
+        public void GenericParent(string methodName) => DoTestGeneric(methodName);
 
         private void DoTestGeneric(string methodName)
         {
-            var (asmDef, methodDef, instruction) = GetContext(methodName, typeof(GenericClass<,>).FullName.Replace('+', '/'));
+            var (asmDef, methodDef, instruction) = GetContext(methodName, typeof(GenericClass<,>));
             using (asmDef)
             {
                 var genericContextMock = new Mock<IGenericContext>();
-                genericContextMock.Setup(o => o.Resolve(It.Is<GenericParameter>(gp => gp.Name == "TIntf"))).Returns(asmDef.MainModule.ImportReference(typeof(IDerived)));
-                var typeRef = instruction.GetDeclaredTypeOfThisObject(methodDef.Body.Variables, genericContextMock.Object);
+                genericContextMock
+                    .Setup(o => o.Resolve(It.Is<GenericParameter>(gp => gp.Name == "TIntf" || gp.Name == "TImpl")))
+                    .Returns(asmDef.MainModule.ImportReference(typeof(IDerived)))
+                    .Verifiable();
+                var typeRef = instruction.GetDeclaredTypeOfThisObject(methodDef, genericContextMock.Object);
+                genericContextMock.Verify(o => o.Resolve(It.Is<GenericParameter>(gp => gp.Name == "TIntf" || gp.Name == "TImpl")), Times.Exactly(1));
                 Assert.AreEqual(nameof(IDerived), typeRef.Name);
             }
         }

@@ -119,8 +119,14 @@ namespace MonoCecilExtensions
             return instruction;
         }
 
-        public static TypeReference GetDeclaredTypeOfThisObject(this Instruction instruction, IList<VariableDefinition> locals, IGenericContext gc = null)
+        public static TypeReference GetDeclaredTypeOfThisObject(this Instruction instruction, MethodDefinition parentMethodDef, IGenericContext gc = null)
         {
+            if (instruction.Operand is not MethodReference calledMethodRef || !calledMethodRef.HasThis)
+            {
+                return null;
+            }
+            var declared = calledMethodRef.DeclaringType;
+
             instruction = MoveBackOnILStack(instruction, true, ConsumedFromStackBy(instruction));
 
             if (instruction.OpCode == OpCodes.Ldloc_0 ||
@@ -129,7 +135,23 @@ namespace MonoCecilExtensions
                 instruction.OpCode == OpCodes.Ldloc_3)
             {
                 var localIndex = instruction.OpCode.Op2 - OpCodes.Ldloc_0.Op2;
-                return locals[localIndex].VariableType.Normalize();
+                return ResolveGenericType(parentMethodDef.Body.Variables[localIndex].VariableType.Normalize(), null, gc);
+            }
+            if (instruction.OpCode == OpCodes.Ldarg_0 ||
+                instruction.OpCode == OpCodes.Ldarg_1 ||
+                instruction.OpCode == OpCodes.Ldarg_2 ||
+                instruction.OpCode == OpCodes.Ldarg_3)
+            {
+                var localIndex = instruction.OpCode.Op2 - OpCodes.Ldarg_0.Op2;
+                if (!parentMethodDef.IsStatic)
+                {
+                    if (localIndex == 0)
+                    {
+                        return declared;
+                    }
+                    --localIndex;
+                }
+                return ResolveGenericType(parentMethodDef.Parameters[localIndex].ParameterType.Normalize(), null, gc);
             }
             return instruction.Operand switch
             {
@@ -137,6 +159,7 @@ namespace MonoCecilExtensions
                 TypeReference tr => ResolveGenericType(tr, tr.DeclaringType, gc),
                 FieldReference fr => ResolveGenericType(fr.FieldType, fr.DeclaringType, gc),
                 VariableReference vr => ResolveGenericType(vr.VariableType, null, gc),
+                ParameterReference pr => ResolveGenericType(pr.ParameterType.Normalize(), null, gc),
                 _ => null,
             };
         }
@@ -145,7 +168,7 @@ namespace MonoCecilExtensions
         {
             if (mr.ReturnType is not GenericParameter gp)
             {
-                return mr.ReturnType;
+                return mr.Name == ".ctor" ? mr.DeclaringType : mr.ReturnType;
             }
 
             if (mr is GenericInstanceMethod m)
