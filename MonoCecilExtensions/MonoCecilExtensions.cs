@@ -64,11 +64,8 @@ namespace MonoCecilExtensions
             _ => 0,
         };
 
-        private static int AnalyzeVariablePop(Instruction methodCall)
-        {
-            var methodDef = ((MethodReference)methodCall.Operand).Resolve();
-            return (methodDef.IsConstructor || methodDef.IsStatic ? 0 : 1) + methodDef.Parameters.Count;
-        }
+        private static int AnalyzeVariablePop(Instruction methodCall) =>
+            (methodCall.HasThisObject() ? 1 : 0) + ((MethodReference)methodCall.Operand).Parameters.Count;
 
         private static Instruction MoveBackOnILStack(Instruction instruction, bool first, int consumedFromStack)
         {
@@ -80,23 +77,23 @@ namespace MonoCecilExtensions
                 }
                 while (instruction.OpCode.OpCodeType == OpCodeType.Prefix);
 
+                while (instruction.OpCode.FlowControl == FlowControl.Branch && instruction.Operand == instruction.Next || instruction.OpCode == OpCodes.Nop)
+                {
+                    instruction = instruction.Previous;
+                }
+
                 if (instruction.OpCode.FlowControl == FlowControl.Branch)
                 {
-                    int count = 1;
+                    var next = instruction.Next;
                     do
                     {
                         instruction = instruction.Previous;
-                        switch (instruction.OpCode.FlowControl)
-                        {
-                            case FlowControl.Branch:
-                                ++count;
-                                break;
-                            case FlowControl.Cond_Branch:
-                                --count;
-                                break;
-                        }
                     }
-                    while (count > 0);
+                    while (instruction.Operand != next);
+                    if (instruction.OpCode.FlowControl == FlowControl.Branch)
+                    {
+                        instruction = instruction.Previous;
+                    }
                 }
 
                 --consumedFromStack;
@@ -113,21 +110,26 @@ namespace MonoCecilExtensions
                     {
                         prevConsumedFromStack -= prevProducedToStack - 1;
                     }
-                    instruction = MoveBackOnILStack(instruction, false, prevConsumedFromStack);
+                    instruction = MoveBackOnILStack(instruction, first && consumedFromStack == 0, prevConsumedFromStack);
                 }
             }
             return instruction;
         }
 
+        public static bool HasThisObject(this Instruction instruction) =>
+            (instruction.OpCode == OpCodes.Call || instruction.OpCode == OpCodes.Callvirt) &&
+            instruction.Operand is MethodReference methodRef &&
+            methodRef.HasThis;
+
         public static TypeReference GetDeclaredTypeOfThisObject(this Instruction instruction, MethodDefinition parentMethodDef, IGenericContext gc = null)
         {
-            if (instruction.Operand is not MethodReference calledMethodRef || !calledMethodRef.HasThis)
-            {
-                return null;
-            }
-            var declared = calledMethodRef.DeclaringType;
+            var declared = parentMethodDef.DeclaringType;
 
             instruction = MoveBackOnILStack(instruction, true, ConsumedFromStackBy(instruction));
+            while (instruction.OpCode == OpCodes.Dup)
+            {
+                instruction = MoveBackOnILStack(instruction, true, ConsumedFromStackBy(instruction));
+            }
 
             if (instruction.OpCode == OpCodes.Ldloc_0 ||
                 instruction.OpCode == OpCodes.Ldloc_1 ||
@@ -157,8 +159,8 @@ namespace MonoCecilExtensions
             {
                 MethodReference mr => ResolveGenericReturnType(mr, gc),
                 TypeReference tr => ResolveGenericType(tr, tr.DeclaringType, gc),
-                FieldReference fr => ResolveGenericType(fr.FieldType, fr.DeclaringType, gc),
-                VariableReference vr => ResolveGenericType(vr.VariableType, null, gc),
+                FieldReference fr => ResolveGenericType(fr.FieldType.Normalize(), fr.DeclaringType, gc),
+                VariableReference vr => ResolveGenericType(vr.VariableType.Normalize(), null, gc),
                 ParameterReference pr => ResolveGenericType(pr.ParameterType.Normalize(), null, gc),
                 _ => null,
             };

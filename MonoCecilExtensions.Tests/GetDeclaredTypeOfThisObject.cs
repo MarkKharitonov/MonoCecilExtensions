@@ -16,6 +16,8 @@ namespace MonoCecilExtensions.Tests
         {
             void Action0();
             void Action1(int? x);
+            void Action2(int x);
+            void Action3(object x);
             int Func0();
             int Func1(object x);
             int Func2(object x, object y);
@@ -46,6 +48,10 @@ namespace MonoCecilExtensions.Tests
             {
                 o.Action0();
             }
+
+            public void Action2(int x) => throw new NotImplementedException();
+
+            public void Action3(object x) => throw new NotImplementedException();
         }
 
         public class Derived2 : Derived
@@ -65,6 +71,7 @@ namespace MonoCecilExtensions.Tests
         private int m_x = 5;
         private readonly static IDerived s_o = GetObject();
         private readonly IDerived m_o = GetObject();
+        private readonly IDerived[] m_a = new IDerived[10];
 
         public static void Func0_Direct()
         {
@@ -144,12 +151,17 @@ namespace MonoCecilExtensions.Tests
             m_o.Func0();
         }
 
+        public void Func0_DirectAsInstanceArrayMemberItem()
+        {
+            m_a[0].Func0();
+        }
+
         public static void Func1_DirectAsStaticMemberWithConstArg()
         {
             s_o.Func1(1000);
         }
 
-        public void Func1_DirectAsInstanceMemberWithConstArg()
+        public void Func1_DirectAsInstanceMemberWithConstArgBoxed()
         {
             m_o.Func1(1000);
         }
@@ -184,10 +196,28 @@ namespace MonoCecilExtensions.Tests
             GetObject2(0).Func0();
         }
 
-        public static void Action1_DirectWithFuncResult()
+        public static void Action1_DirectWithFuncResultConvertedToNullable()
         {
             var o = GetObject();
             o.Action1(o.Func0());
+        }
+
+        public static void Action1_DirectWithConstArgConvertedToNullable()
+        {
+            var o = GetObject();
+            o.Action1(5);
+        }
+
+        public static void Action2_DirectWithFuncResultNoConversion()
+        {
+            var o = GetObject();
+            o.Action2(o.Func0());
+        }
+
+        public static void Action3_DirectWithFuncResultAsBoxed()
+        {
+            var o = GetObject();
+            o.Action3(o.Func0());
         }
 
         public static void Action1_DirectWithFuncResult2()
@@ -491,19 +521,25 @@ namespace MonoCecilExtensions.Tests
 
         private (AssemblyDefinition, MethodDefinition, Instruction) GetContext(string methodName, Type type = null, bool assertDeclaredType = true)
         {
-            var asmDef = AssemblyDefinition.ReadAssembly(Assembly.GetExecutingAssembly().Location);
             var targetName = methodName.Substring(0, methodName.IndexOf('_'));
+            return GetContext(methodName, targetName, type, assertDeclaredType);
+        }
+
+        private (AssemblyDefinition, MethodDefinition, Instruction) GetContext(string methodName, string targetName, Type type, bool assertDeclaredType,
+            int index = 0)
+        {
+            var asmDef = AssemblyDefinition.ReadAssembly(Assembly.GetExecutingAssembly().Location);
             var typeDef = asmDef.MainModule.ImportReference(type ?? GetType()).Resolve();
             var methodDefs = typeDef.Methods.Where(m => m.Name == methodName).ToList();
             Assert.AreEqual(1, methodDefs.Count, $"Found {methodDefs.Count} methods named {methodName}");
-            var instruction = methodDefs[0].Body.Instructions.FirstOrDefault(i => i.Operand is MethodReference mr && mr.Name == targetName);
-            Assert.IsNotNull(instruction, $"Not found call to {targetName} in {methodName}");
+            var instructions = methodDefs[0].Body.Instructions.Where(i => i.Operand is MethodReference mr && mr.Name == targetName).ToList();
+            Assert.IsNotEmpty(instructions, $"Not found call to {targetName} in {methodName}");
             if (assertDeclaredType)
             {
-                var methodRef = (MethodReference)instruction.Operand;
+                var methodRef = (MethodReference)instructions[index].Operand;
                 Assert.AreEqual(nameof(IBase), methodRef.DeclaringType.Name);
             }
-            return (asmDef, methodDefs[0], instruction);
+            return (asmDef, methodDefs[0], instructions[index]);
         }
 
         [TestCase(nameof(Func0_Direct))]
@@ -556,7 +592,10 @@ namespace MonoCecilExtensions.Tests
         [TestCase(nameof(Func2_IndirectAsGenericClassMethodMixedArgs))]
         [TestCase(nameof(Func2_IndirectAsGenericClassIndexerMixedArgs))]
         [TestCase(nameof(Func2_IndirectAsGenericClassExplicitCastMixedArgs))]
-        [TestCase(nameof(Action1_DirectWithFuncResult))]
+        [TestCase(nameof(Action1_DirectWithFuncResultConvertedToNullable))]
+        [TestCase(nameof(Action1_DirectWithConstArgConvertedToNullable))]
+        [TestCase(nameof(Action2_DirectWithFuncResultNoConversion))]
+        [TestCase(nameof(Action3_DirectWithFuncResultAsBoxed))]
         [TestCase(nameof(Action1_DirectWithFuncResult2))]
         [TestCase(nameof(Func1_DirectWithConstArg))]
         [TestCase(nameof(Func1_DirectWithCast))]
@@ -564,11 +603,12 @@ namespace MonoCecilExtensions.Tests
         [TestCase(nameof(Func1_DirectWithArgFromStaticMembers))]
         [TestCase(nameof(Func1_DirectWithArgFromInstanceMembers))]
         [TestCase(nameof(Func1_DirectAsStaticMemberWithConstArg))]
-        [TestCase(nameof(Func1_DirectAsInstanceMemberWithConstArg))]
+        [TestCase(nameof(Func1_DirectAsInstanceMemberWithConstArgBoxed))]
         [TestCase(nameof(Func1_DirectAsStaticMemberWithArgAsFuncResult))]
         [TestCase(nameof(Func1_DirectAsInstanceMemberWithArgAsAnonymousArrayItem))]
         [TestCase(nameof(Func0_DirectAsStaticMember))]
         [TestCase(nameof(Func0_DirectAsInstanceMember))]
+        [TestCase(nameof(Func0_DirectAsInstanceArrayMemberItem))]
         [TestCase(nameof(Func0_IndirectAsGenericTypeMethodResult))]
         [TestCase(nameof(Func0_IndirectAsGenericTypeMethodResult2))]
         [TestCase(nameof(Func0_IndirectAsGenericFuncResult))]
@@ -579,14 +619,14 @@ namespace MonoCecilExtensions.Tests
             DoTest(methodName, typeof(IDerived));
         }
 
-        [TestCase(nameof(Derived.Action0_AsMemberOfThisClass), typeof(Derived))]
-        [TestCase(nameof(Derived.Action0_AsStaticMemberOfThisClass), typeof(Derived))]
-        [TestCase(nameof(Derived2.Action0_AsMemberOfBaseClass), typeof(Derived2))]
-        [TestCase(nameof(GenericDerived<IDerived, Derived>.Func0_DirectAsMemberOfBaseClass), typeof(GenericDerived<IDerived, Derived>))]
-        [TestCase(nameof(Func0_IndirectAsExplicitCastToInterface), null)]
-        public void DerivedParent(string methodName, Type type)
+        [TestCase(nameof(Derived.Action0_AsMemberOfThisClass), null, typeof(Derived))]
+        [TestCase(nameof(Derived.Action0_AsStaticMemberOfThisClass), null, typeof(Derived))]
+        [TestCase(nameof(Derived2.Action0_AsMemberOfBaseClass), null, typeof(Derived2))]
+        [TestCase(nameof(GenericDerived<IDerived, Derived>.Func0_DirectAsMemberOfBaseClass), null, typeof(GenericDerived<IDerived, Derived>))]
+        [TestCase(nameof(Func0_IndirectAsExplicitCastToInterface), typeof(Derived), null)]
+        public void DerivedParent(string methodName, Type expectedResult, Type type)
         {
-            DoTest(methodName, typeof(Derived), type, false);
+            DoTest(methodName, expectedResult ?? type, type, false);
         }
 
         [TestCase(nameof(Func0_IndirectAsGenericDerivedExplicitCast), typeof(GenericDerived<IDerived, Derived>))]
@@ -637,6 +677,68 @@ namespace MonoCecilExtensions.Tests
                 var typeRef = instruction.GetDeclaredTypeOfThisObject(methodDef, genericContextMock.Object);
                 genericContextMock.Verify(o => o.Resolve(It.Is<GenericParameter>(gp => gp.Name == "TIntf" || gp.Name == "TImpl")), Times.Exactly(1));
                 Assert.AreEqual(nameof(IDerived), typeRef.Name);
+            }
+        }
+
+        private class DTO
+        {
+            public string Field1 { get; set; }
+            public bool Field2 { get; set; }
+            public int x { get; set; }
+        }
+
+        private List<DTO> WithDup()
+        {
+            return new List<DTO>
+            {
+                new DTO
+                {
+                    Field1 = "Hello",
+                    Field2 = true
+                }
+            };
+        }
+
+        private void TernaryWithAndAlwaysTrue(int? y)
+        {
+            var o = new DTO();
+#pragma warning disable CS0472
+            o.x = (s_bool && y.Value != null) ? 5 : 0;
+#pragma warning restore CS0472
+        }
+
+        private void SomeFunction(Func<int> f) => throw new NotImplementedException();
+
+        private int CapturedWithArray()
+        {
+            var a = new DTO[10];
+            SomeFunction(() => a[0].x);
+            return a[0].x;
+        }
+
+        private void NamedParamWithDefaults()
+        {
+            SomeFunction2(y: true);
+        }
+
+        private void SomeFunction2(int? x = null, bool? y = null)
+        {
+            throw new NotImplementedException();
+        }
+
+        [TestCase(nameof(WithDup), "set_" + nameof(DTO.Field1), typeof(DTO), 0)]
+        [TestCase(nameof(WithDup), "set_" + nameof(DTO.Field2), typeof(DTO), 0)]
+        [TestCase(nameof(WithDup), nameof(List<DTO>.Add), typeof(List<DTO>), 0)]
+        [TestCase(nameof(TernaryWithAndAlwaysTrue), "set_" + nameof(DTO.x), typeof(DTO), 0)]
+        [TestCase(nameof(CapturedWithArray), "get_" + nameof(DTO.x), typeof(DTO), 0)]
+        [TestCase(nameof(NamedParamWithDefaults), nameof(SomeFunction2), null, 0)]
+        public void Misc(string methodName, string targetName, Type expectedType, int index)
+        {
+            var (asmDef, methodDef, instruction) = GetContext(methodName, targetName, null, false, index);
+            using (asmDef)
+            {
+                var typeRef = instruction.GetDeclaredTypeOfThisObject(methodDef);
+                Assert.AreEqual(asmDef.MainModule.ImportReference(expectedType ?? GetType()).FullName, typeRef.FullName);
             }
         }
     }
